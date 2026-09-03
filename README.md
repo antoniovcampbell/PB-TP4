@@ -1,76 +1,67 @@
-# PB-TP3
+# PB-TP4
 
-Projeto de **catálogo de produtos com um microserviço de avaliações**, estruturado como um build **multi-módulo Maven** e refatorado para **arquitetura orientada a eventos** com RabbitMQ.
+Projeto de catálogo de produtos com microserviço de avaliações, organizado como um build multi-módulo Maven e integrado por eventos via RabbitMQ.
 
-## Arquitetura (Microserviços)
+## Estrutura
 
 ```text
-PB-TP3 (pom pai / agregador)
-├── shared       # Contratos (DTOs) compartilhados entre os serviços
-├── catalogo     # Serviço de catálogo de produtos (existente, porta 8080)
-├── avaliacoes   # NOVO microserviço de avaliações de produtos (porta 8081)
-└── frontend     # SPA React (Vite), consumindo os dois serviços
+PB-TP4 (pom pai)
+├── shared       contratos e mensagens compartilhadas
+├── catalogo     serviço de catálogo de produtos
+├── avaliacoes   serviço de avaliações de produtos
+└── frontend     interface React com Vite
 ```
 
-### Módulos
+## Módulos
 
-| Módulo       | Porta | Responsabilidade                                                              |
-|--------------|-------|-------------------------------------------------------------------------------|
-| `shared`     | -     | DTOs `ProdutoDTO` e `AvaliacaoDTO` — contrato entre os serviços              |
-| `catalogo`   | 8080  | CRUD de produtos e categorias, histórico (Hibernate Envers)                   |
-| `avaliacoes` | 8081  | Novas avaliações (nota 1–5, comentário) por produto                           |
-| `frontend`   | 5173  | Interface React que integra ambos os serviços                                 |
+| Módulo | Porta | Responsabilidade |
+|---|---:|---|
+| `shared` | - | DTOs e contratos de mensagem |
+| `catalogo` | 8090 | CRUD de produtos e categorias, histórico com Envers |
+| `avaliacoes` | 8081 | CRUD de avaliações e consulta por produto |
+| `frontend` | 5173 | Interface web do sistema |
 
-### Comunicação entre serviços (Event-Driven)
+## Integração
 
-- O módulo `catalogo` publica eventos de produto em um **topic exchange** do RabbitMQ.
-- O módulo `avaliacoes` consome esses eventos e mantém um **espelho local** do catálogo.
-- A criação de avaliações passa a validar o produto no cache local, reduzindo o acoplamento síncrono entre serviços.
-- O módulo `shared` concentra os contratos de mensagem (`EventoProduto`, `TipoEventoProduto` e constantes do broker).
+- `catalogo` publica eventos de produto em um `topic exchange` do RabbitMQ.
+- `avaliacoes` consome os eventos e mantém uma cópia local do catálogo.
+- O cadastro de avaliações valida o produto localmente antes de persistir.
 
-### Prós e contras
+## Mensageria
 
-- Prós: menor acoplamento, melhor resiliência, escalabilidade e isolamento de falhas.
-- Contras: consistência eventual, maior complexidade operacional e necessidade de tratar reentrega/duplicidade de mensagens.
+- Exchange: `catalogo.produtos.exchange`
+- Eventos: `produto.criado`, `produto.atualizado`, `produto.excluido`
+- Fila: `avaliacoes.catalogo.produtos.queue`
 
-### Padrão de mensagens
+## Endpoints de avaliações
 
-- `catalogo.produtos.exchange` como `topic exchange`.
-- Eventos `produto.criado`, `produto.atualizado` e `produto.excluido`.
-- A fila `avaliacoes.catalogo.produtos.queue` consome todos os eventos de produto.
-
-### Endpoints do microserviço de avaliações (`/avaliacoes`, porta 8081)
-
-| Método | Caminho                          | Descrição                                    |
-|--------|----------------------------------|----------------------------------------------|
-| GET    | `/avaliacoes`                    | Lista (filtros: `produtoId`, `nota`)         |
-| GET    | `/avaliacoes/{id}`               | Busca por id                                 |
-| GET    | `/avaliacoes/produtos/{produtoId}` | Avaliações de um produto                   |
-| GET    | `/avaliacoes/produtos/{produtoId}/media` | Média e total de avaliações   |
-| POST   | `/avaliacoes`                    | Cria avaliação (valida produto no catálogo local)  |
-| PUT    | `/avaliacoes/{id}`               | Atualiza avaliação                           |
-| DELETE | `/avaliacoes/{id}`               | Remove avaliação                             |
+| Método | Caminho | Descrição |
+|---|---|---|
+| GET | `/avaliacoes` | Lista avaliações com filtros opcionais |
+| GET | `/avaliacoes/{id}` | Busca por id |
+| GET | `/avaliacoes/produtos/{produtoId}` | Lista avaliações de um produto |
+| GET | `/avaliacoes/produtos/{produtoId}/media` | Média e total de avaliações |
+| POST | `/avaliacoes` | Cria avaliação |
+| PUT | `/avaliacoes/{id}` | Atualiza avaliação |
+| DELETE | `/avaliacoes/{id}` | Remove avaliação |
 
 ## Como executar
 
-Pré-requisitos: JDK 21, Maven 3.9+ (`mvnw` incluso), Node.js, RabbitMQ na porta 5672.
+Pré-requisitos: JDK 21, Maven 3.9+, Node.js e RabbitMQ.
 
-1. Suba os serviços backend (em janelas/terminais separados):
+1. Inicie os backends em terminais separados:
 
 ```bash
-# catálogo (porta 8080)
 ./mvnw -pl catalogo spring-boot:run
-
-# avaliações (porta 8081) — depende apenas do RabbitMQ para sincronizar eventos
 ./mvnw -pl avaliacoes spring-boot:run
 ```
 
-2. Suba o front-end:
+2. Inicie o frontend:
 
 ```bash
 cd frontend
 npm install
-npm run dev        # http://localhost:5173
+npm run dev
 ```
 
 ## Testes
@@ -79,11 +70,8 @@ npm run dev        # http://localhost:5173
 ./mvnw clean test
 ```
 
-- `catalogo`: repositórios e serviços de produto/categoria/histórico (39 testes).
-- `avaliacoes`: repositório, serviço e controller (`@WebMvcTest`, 25 testes).
-
 ## Stack
 
-- Spring Boot 4.0.6, Spring AMQP/RabbitMQ, Java 21
-- Spring Data JPA + H2, Hibernate Envers (auditoria no catálogo)
-- React 19 + Vite 8 (front-end)
+- Spring Boot 4.0.6, Java 21, Spring AMQP
+- Spring Data JPA, H2, Hibernate Envers
+- React 19, Vite 8
